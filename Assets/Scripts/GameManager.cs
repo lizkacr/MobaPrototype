@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 public enum MatchPhase { Playing, Finished }
 
@@ -10,7 +11,15 @@ public class GameManager : MonoBehaviour
     public static bool IsPlaying => Instance == null || Instance.Phase == MatchPhase.Playing;
     public static event Action<MatchResult> MatchFinished;
 
-    public Health player;   
+    [Header("Ссылки")]
+    public Health player;            // PlayerHero из Hierarchy
+    public Transform blueRespawn;    // пустой объект у синей базы
+    public Transform redRespawn;     // пустой объект у красной базы
+
+    [Header("Возрождение")]
+    public float respawnBase = 6f;
+    public float respawnPenaltyPerDeath = 2f;
+    public float respawnMax = 20f;
 
     public MatchPhase Phase { get; private set; } = MatchPhase.Playing;
     public MatchResult Result { get; private set; }
@@ -21,7 +30,32 @@ public class GameManager : MonoBehaviour
     public int PlayerTowerKills => pTowerKills;
     public int PlayerDeaths => pDeaths;
 
+    public float PlayerRespawnLeft
+    {
+        get
+        {
+            foreach (var p in pending)
+                if (p.hero == player) return Mathf.Max(0f, p.at - Time.time);
+            return 0f;
+        }
+    }
+
+    
+    public float PlayerRespawnPenalty
+    {
+        get
+        {
+            if (player == null || !heroDeaths.TryGetValue(player, out int n)) return 0f;
+            return Mathf.Min(respawnMax - respawnBase, respawnPenaltyPerDeath * n);
+        }
+    }
+
+    class Pending { public Health hero; public float at; public bool hidden; }
+
     readonly HashSet<Team> fallenBases = new HashSet<Team>();
+    readonly List<Pending> pending = new List<Pending>();
+    readonly Dictionary<Health, int> heroDeaths = new Dictionary<Health, int>();
+
     float startTime, finishTime;
     int pHeroKills, pMinionKills, pTowerKills, pDeaths, blueKills, redKills;
     float pDamage;
@@ -67,6 +101,55 @@ public class GameManager : MonoBehaviour
         }
 
         if (victim == player) pDeaths++;
+
+        if (victim.isHero)
+        {
+            heroDeaths.TryGetValue(victim, out int n);
+            n++;
+            heroDeaths[victim] = n;
+            float delay = Mathf.Min(respawnMax, respawnBase + respawnPenaltyPerDeath * (n - 1));
+            pending.Add(new Pending { hero = victim, at = Time.time + delay });
+        }
+    }
+
+    
+    void Update()
+    {
+        if (Phase != MatchPhase.Playing) return;
+
+        for (int i = pending.Count - 1; i >= 0; i--)
+        {
+            Pending p = pending[i];
+            if (p.hero == null) { pending.RemoveAt(i); continue; }
+
+            if (!p.hidden)
+            {
+                p.hero.gameObject.SetActive(false);
+                p.hidden = true;
+            }
+
+            if (Time.time >= p.at)
+            {
+                Respawn(p.hero);
+                pending.RemoveAt(i);
+            }
+        }
+    }
+
+    void Respawn(Health hero)
+    {
+        Transform point = hero.Team == Team.Blue ? blueRespawn : redRespawn;
+        Vector3 pos = point != null ? point.position : hero.transform.position;
+
+        hero.transform.position = pos;
+        hero.gameObject.SetActive(true);   
+
+        var agent = hero.GetComponent<NavMeshAgent>();
+        if (agent != null && agent.isOnNavMesh)
+        {
+            agent.Warp(pos);
+            agent.ResetPath();
+        }
     }
 
     void LateUpdate()
@@ -83,6 +166,7 @@ public class GameManager : MonoBehaviour
         if (Phase != MatchPhase.Playing) return;
         Phase = MatchPhase.Finished;
         finishTime = Time.time;
+        pending.Clear();   
         Result = new MatchResult(winner, finishTime - startTime,
             pHeroKills, pMinionKills, pTowerKills, pDeaths, (int)pDamage, blueKills, redKills);
         Debug.Log($"Match finished. Winner: {winner}, minions: {pMinionKills}, damage: {(int)pDamage}");
@@ -99,5 +183,7 @@ public class GameManager : MonoBehaviour
     [ContextMenu("DEBUG Red base dies")] void DbgRed() => KillBase(Team.Red);
     [ContextMenu("DEBUG Blue base dies")] void DbgBlue() => KillBase(Team.Blue);
     [ContextMenu("DEBUG Both bases die (same frame)")] void DbgBoth() { KillBase(Team.Blue); KillBase(Team.Red); }
+    [ContextMenu("DEBUG Kill player")] void DbgKillPlayer() { if (player != null) player.TakeDamage(1e9f, null); }
+    [ContextMenu("DEBUG Kill player and red base (same frame)")] void DbgPlayerAndBase() { DbgKillPlayer(); KillBase(Team.Red); }
 #endif
 }
