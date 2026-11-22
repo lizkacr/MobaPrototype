@@ -12,9 +12,9 @@ public class GameManager : MonoBehaviour
     public static event Action<MatchResult> MatchFinished;
 
     [Header("Ссылки")]
-    public Health player;            // PlayerHero из Hierarchy
-    public Transform blueRespawn;    // пустой объект у синей базы
-    public Transform redRespawn;     // пустой объект у красной базы
+    public Health player;
+    public Transform blueRespawn;
+    public Transform redRespawn;
 
     [Header("Возрождение")]
     public float respawnBase = 6f;
@@ -29,6 +29,7 @@ public class GameManager : MonoBehaviour
     public int PlayerMinionKills => pMinionKills;
     public int PlayerTowerKills => pTowerKills;
     public int PlayerDeaths => pDeaths;
+    public Team PlayerTeam => player != null ? player.Team : Team.Blue;
 
     public float PlayerRespawnLeft
     {
@@ -40,7 +41,6 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    
     public float PlayerRespawnPenalty
     {
         get
@@ -86,7 +86,7 @@ public class GameManager : MonoBehaviour
     {
         if (Phase != MatchPhase.Playing) return;
 
-        if (victim.isBase) fallenBases.Add(victim.Team);   
+        if (victim.isBase) fallenBases.Add(victim.Team);
 
         if (killer != null)
         {
@@ -112,7 +112,6 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    
     void Update()
     {
         if (Phase != MatchPhase.Playing) return;
@@ -142,7 +141,7 @@ public class GameManager : MonoBehaviour
         Vector3 pos = point != null ? point.position : hero.transform.position;
 
         hero.transform.position = pos;
-        hero.gameObject.SetActive(true);   
+        hero.gameObject.SetActive(true);
 
         var agent = hero.GetComponent<NavMeshAgent>();
         if (agent != null && agent.isOnNavMesh)
@@ -166,7 +165,7 @@ public class GameManager : MonoBehaviour
         if (Phase != MatchPhase.Playing) return;
         Phase = MatchPhase.Finished;
         finishTime = Time.time;
-        pending.Clear();   
+        pending.Clear();
         Result = new MatchResult(winner, finishTime - startTime,
             pHeroKills, pMinionKills, pTowerKills, pDeaths, (int)pDamage, blueKills, redKills);
         Debug.Log($"Match finished. Winner: {winner}, minions: {pMinionKills}, damage: {(int)pDamage}");
